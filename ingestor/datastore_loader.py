@@ -9,7 +9,7 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
-DATA = Path("data")
+DATA = Path(__file__).parent.parent / "data"
 
 def load_bus_stops() -> cudf.DataFrame:
     """
@@ -67,6 +67,9 @@ def load_lsoa_demographics() -> cudf.DataFrame:
         atlas_slim = atlas[[code_col]].rename(columns={code_col: "lsoa_code"})
         atlas_slim["population"] = 1500  # fallback
 
+    if "lsoa_name" not in atlas_slim.columns:
+        atlas_slim["lsoa_name"] = ""
+
     merged = atlas_slim.merge(imd_slim, on="lsoa_code", how="left")
     merged["imd_decile"] = merged["imd_decile"].fillna(5)
     return cudf.from_pandas(merged)
@@ -79,7 +82,7 @@ def load_business_counts() -> cudf.DataFrame:
     df = pd.read_csv(DATA / "business_counts.csv", low_memory=False)
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
     borough_col = next((c for c in df.columns if "borough" in c or "area" in c), df.columns[0])
-    count_col = next((c for c in df.columns if "count" in c or "total" in c or "number" in c), df.columns[1])
+    count_col = next((c for c in df.columns if "count" in c or "total" in c or "number" in c), df.columns[1] if len(df.columns) > 1 else df.columns[0])
     df = df[[borough_col, count_col]].rename(columns={borough_col: "borough", count_col: "business_count"})
     return cudf.from_pandas(df)
 
@@ -109,7 +112,7 @@ def join_stops_to_lsoa(stops_cudf: cudf.DataFrame) -> cudf.DataFrame:
     joined = joined.rename(columns={lsoa_col: "lsoa_code"})
     joined = joined.drop(columns=["geometry", "index_right"], errors="ignore")
 
-    result = cudf.from_pandas(joined.drop(columns=["geometry"], errors="ignore").reset_index(drop=True))
+    result = cudf.from_pandas(pd.DataFrame(joined).drop(columns=["geometry"], errors="ignore").reset_index(drop=True))
     result.to_parquet(cache)
     print(f"Spatial join complete. {len(result)} stops assigned to LSOAs.")
     return result
