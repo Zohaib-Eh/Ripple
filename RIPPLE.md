@@ -102,10 +102,10 @@ GPU-accelerated graph algorithms — same concept as NetworkX but on the GPU.
 
 **Why it matters:** BFS (breadth-first search) on a 25,000-node road network takes 9–12 seconds with NetworkX on CPU. With cuGraph on the DGX Spark it takes ~80 milliseconds. This is what makes real-time cascade modelling possible — on CPU you couldn't do it fast enough to be live.
 
-### NVIDIA NIM (phi-3.5-vision-instruct)
-A locally-running Vision Language Model. We point it at a live JamCam JPEG and ask: *"Classify traffic conditions: flowing / slow / congested / incident."*
+### NVIDIA NIM (Nemotron-Nano VL 8B)
+A locally-running Vision Language Model — specifically `nvidia/llama-3.1-nemotron-nano-vl-8b-v1`, NVIDIA's own vision model. We point it at a live JamCam JPEG and ask: *"Classify traffic conditions: flowing / slow / congested / incident."*
 
-**Why it matters:** The model runs entirely on the DGX Spark. Camera footage never leaves the network — which would be a hard requirement for any real deployment with a city council. This is the privacy/data governance story.
+**Why it matters:** The model runs entirely on the DGX Spark using NVIDIA's own Nemotron architecture. Camera footage never leaves the network — which would be a hard requirement for any real deployment with a city council. Using NVIDIA's own model also means the full stack (hardware + inference framework + model) is NVIDIA end to end.
 
 ### The DGX Spark Story
 

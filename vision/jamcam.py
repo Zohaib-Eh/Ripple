@@ -69,7 +69,7 @@ def classify_camera(camera: Camera) -> str:
     )
     try:
         resp = client.chat.completions.create(
-            model=os.getenv("NIM_MODEL", "microsoft/phi-3-5-vision-instruct"),
+            model=os.getenv("NIM_MODEL", "nvidia/llama-3.1-nemotron-nano-vl-8b-v1"),
             messages=[{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
                 {"type": "text", "text": _PROMPT},
