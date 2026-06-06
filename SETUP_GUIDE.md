@@ -186,7 +186,7 @@ export NGC_API_KEY=$(grep NGC_API_KEY .env | cut -d '=' -f2)
 docker run -it --rm --gpus all \
   -e NGC_API_KEY=$NGC_API_KEY \
   -p 8000:8000 \
-  nvcr.io/nim/nvidia/llama-3.1-nemotron-nano-vl-8b-v1:latest
+  nvcr.io/nim/nvidia/llama-3.1-nemotron-nano-vl-8b-v1:1
 ```
 
 The `export` line reads the NGC key directly from your `.env` file so you don't have to type it again.
@@ -313,7 +313,7 @@ streamlit run main.py --server.port 8501 --server.address 0.0.0.0
 ssh nvidia@hp-15.local
 cd ~/ripple
 export NGC_API_KEY=$(grep NGC_API_KEY .env | cut -d '=' -f2)
-docker run -it --rm --gpus all -e NGC_API_KEY=$NGC_API_KEY -p 8000:8000 nvcr.io/nim/nvidia/llama-3.1-nemotron-nano-vl-8b-v1:latest
+docker run -it --rm --gpus all -e NGC_API_KEY=$NGC_API_KEY -p 8000:8000 nvcr.io/nim/nvidia/llama-3.1-nemotron-nano-vl-8b-v1:1
 
 # Browser (Windows)
 http://localhost:8501
