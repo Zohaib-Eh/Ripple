@@ -1,0 +1,308 @@
+# How to Run Ripple on the DGX Spark
+
+Everything you need, step by step. No prior experience required.
+
+---
+
+## Overview
+
+Your code is on your Windows laptop. The DGX Spark is a separate machine you connect to via SSH (`ssh nvidia@hp-15.local`). You need to:
+
+1. Copy the code from your laptop to the Spark
+2. Set up the environment on the Spark
+3. Download the London data
+4. Start the NIM AI model container
+5. Run the app
+6. View it in your browser
+
+---
+
+## Step 1 — Copy the Code to the DGX Spark
+
+On your **Windows machine**, open PowerShell and run:
+
+```powershell
+scp -r "C:\Users\zohai\Projects\NVIDIA" nvidia@hp-15.local:~/ripple
+```
+
+This copies your entire project folder to a folder called `ripple` on the Spark. It will ask for a password if one is set.
+
+**Verify it worked** — SSH into the Spark and check:
+```bash
+ssh nvidia@hp-15.local
+ls ~/ripple
+```
+
+You should see files like `main.py`, `requirements.txt`, `RIPPLE.md`, etc.
+
+---
+
+## Step 2 — Stay Connected with Port Forwarding
+
+You need to view the Streamlit app in your browser. To do that, open a **new PowerShell window** and connect like this:
+
+```powershell
+ssh -L 8501:localhost:8501 nvidia@hp-15.local
+```
+
+The `-L 8501:localhost:8501` part creates a tunnel — anything running on port 8501 on the Spark will be accessible at `http://localhost:8501` in your browser on Windows.
+
+**Keep this terminal open the entire time.** Don't close it.
+
+---
+
+## Step 3 — Set Up Python Environment on the Spark
+
+In your SSH session, run:
+
+```bash
+cd ~/ripple
+```
+
+Check Python version (needs 3.10+):
+```bash
+python3 --version
+```
+
+Install all dependencies. RAPIDS (cuDF/cuGraph) needs the NVIDIA PyPI index:
+
+```bash
+pip install cudf-cu12 cugraph-cu12 --extra-index-url=https://pypi.nvidia.com
+pip install osmnx geopandas shapely httpx streamlit folium streamlit-folium python-dotenv networkx openai pillow pandas pytest respx
+```
+
+This will take 5–10 minutes. The RAPIDS packages are large.
+
+**Verify RAPIDS installed correctly:**
+```bash
+python3 -c "import cudf; import cugraph; print('RAPIDS OK')"
+```
+
+If you see `RAPIDS OK` you're good. If it errors, run:
+```bash
+pip install cudf-cu12 cugraph-cu12 --extra-index-url=https://pypi.nvidia.com --upgrade
+```
+
+---
+
+## Step 4 — Get Your TfL API Key
+
+1. Go to **https://api.tfl.gov.uk** in your browser
+2. Click **Register** (top right)
+3. Fill in your details — it's free and instant
+4. Once logged in, go to **My Account** → **API Keys**
+5. Copy your key
+
+You'll need this in Step 7.
+
+---
+
+## Step 5 — Get Your NGC API Key (for the NIM AI model)
+
+The NIM container (the vision AI model) needs an NVIDIA NGC account to download.
+
+1. Go to **https://ngc.nvidia.com** and sign up (free)
+2. Once logged in, click your profile (top right) → **Setup**
+3. Click **Generate API Key**
+4. Copy the key — it starts with something like `nvapi-...`
+
+---
+
+## Step 6 — Download the London Data
+
+Still in your SSH session (`cd ~/ripple`), run:
+
+```bash
+pip install requests osmnx
+python3 scripts/download_data.py
+```
+
+This downloads LSOA boundaries, bus stops, demographics, and business counts. Takes about 2–3 minutes.
+
+Then download the road network (this one takes longer — 4–6 minutes):
+
+```bash
+python3 scripts/download_road_network.py
+```
+
+You should see output like:
+```
+Downloading Central London road network (drive mode)...
+Graph: 24891 nodes, 58432 edges
+Saved to data/london_road_network.graphml
+```
+
+**Verify everything downloaded:**
+```bash
+ls data/
+```
+
+You should see: `lsoa_boundaries/`, `lsoa_atlas.csv`, `bus_stops.csv`, `imd_2019.csv`, `business_counts.csv`, `london_road_network.graphml`
+
+---
+
+## Step 7 — Create Your .env File
+
+This file holds your secret keys. In your SSH session:
+
+```bash
+cd ~/ripple
+nano .env
+```
+
+Type exactly this (replacing with your real keys):
+
+```
+TFL_API_KEY=your_tfl_key_here
+NIM_BASE_URL=http://localhost:8000/v1
+NIM_MODEL=microsoft/phi-3-5-vision-instruct
+```
+
+Save and exit: press `Ctrl+X`, then `Y`, then `Enter`.
+
+---
+
+## Step 8 — Start the NIM AI Model Container
+
+Open a **second SSH session** (new PowerShell window):
+
+```powershell
+ssh nvidia@hp-15.local
+```
+
+In this new session, set your NGC API key and start the NIM container:
+
+```bash
+export NGC_API_KEY=your_ngc_key_here
+docker run -it --rm --gpus all \
+  -e NGC_API_KEY=$NGC_API_KEY \
+  -p 8000:8000 \
+  nvcr.io/nim/microsoft/phi-3-5-vision-instruct:latest
+```
+
+The first time this runs it will **download the model** — this can take 5–15 minutes depending on the connection. You'll see a progress bar.
+
+When it's ready you'll see something like:
+```
+INFO:     Uvicorn running on http://0.0.0.0:8000
+```
+
+**Verify the model is running** — open a third SSH session and run:
+```bash
+curl http://localhost:8000/v1/models
+```
+
+You should get a JSON response. If you do, the AI model is ready.
+
+**Keep this terminal open** — the model needs to keep running.
+
+---
+
+## Step 9 — Run the Ripple App
+
+Go back to your **first SSH session** (the one with port forwarding: `ssh -L 8501:...`):
+
+```bash
+cd ~/ripple
+streamlit run main.py --server.port 8501 --server.address 0.0.0.0
+```
+
+You'll see:
+```
+  You can now view your Streamlit app in your browser.
+  Network URL: http://0.0.0.0:8501
+```
+
+---
+
+## Step 10 — Open in Your Browser
+
+On your **Windows laptop**, open your browser and go to:
+
+```
+http://localhost:8501
+```
+
+You should see the Ripple map! The first load takes 2–3 minutes because it's:
+- Loading the London road network into cuGraph (GPU)
+- Running the spatial join to assign LSOA codes to bus stops
+- Fetching live data from TfL
+
+After the first load, refreshes are fast.
+
+---
+
+## What You'll See
+
+- **A map of London** with markers for active road disruptions
+- **4 metrics at the top**: Active Disruptions, Journeys Affected, Population Impacted, Camera Incidents
+- **Coloured markers**: red = incident, orange = congested, yellow = slow, green = flowing
+- **Click any marker** to see the camera thumbnail and impact numbers
+- **Sidebar left**: click "Demo: Bank Station Closure" to see a hardcoded demo scenario
+- **GPU vs CPU Benchmark** in the sidebar shows the speedup numbers
+
+---
+
+## Troubleshooting
+
+### "Module not found: cudf"
+```bash
+pip install cudf-cu12 --extra-index-url=https://pypi.nvidia.com
+```
+
+### "Port 8501 already in use"
+```bash
+streamlit run main.py --server.port 8502
+```
+Then open `http://localhost:8502` in your browser (also update the SSH tunnel: `ssh -L 8502:localhost:8502 nvidia@hp-15.local`).
+
+### "TfL API returns 0 disruptions"
+This is normal — there may genuinely be no active road disruptions right now. Use the Demo button in the sidebar to see the system working.
+
+### NIM container says "permission denied" or "authentication failed"
+Make sure your NGC_API_KEY is set correctly:
+```bash
+echo $NGC_API_KEY
+```
+If it's empty, re-run `export NGC_API_KEY=your_key_here`.
+
+### The app is loading for too long (>5 minutes)
+The spatial join (bus stops → LSOA codes) runs once and caches to `data/stops_with_lsoa.parquet`. If it's stuck, wait it out — it only ever runs once.
+
+### Can't connect to localhost:8501
+Make sure you started the SSH session with port forwarding:
+```powershell
+ssh -L 8501:localhost:8501 nvidia@hp-15.local
+```
+Not just `ssh nvidia@hp-15.local`.
+
+---
+
+## Session Summary — What Each Terminal Does
+
+| Terminal | Command | Purpose |
+|---|---|---|
+| Terminal 1 | `ssh -L 8501:localhost:8501 nvidia@hp-15.local` | Port-forwarded main session — run the app here |
+| Terminal 2 | `ssh nvidia@hp-15.local` + docker run | Keeps the NIM AI model running |
+| Browser | `http://localhost:8501` | View the Ripple UI |
+
+---
+
+## Quick Reference — Commands to Run in Order
+
+```bash
+# Terminal 1 (port-forwarded SSH)
+ssh -L 8501:localhost:8501 nvidia@hp-15.local
+cd ~/ripple
+python3 scripts/download_data.py        # first time only
+python3 scripts/download_road_network.py # first time only
+streamlit run main.py --server.port 8501 --server.address 0.0.0.0
+
+# Terminal 2 (separate SSH)
+ssh nvidia@hp-15.local
+export NGC_API_KEY=your_key
+docker run -it --rm --gpus all -e NGC_API_KEY=$NGC_API_KEY -p 8000:8000 nvcr.io/nim/microsoft/phi-3-5-vision-instruct:latest
+
+# Browser (Windows)
+http://localhost:8501
+```
