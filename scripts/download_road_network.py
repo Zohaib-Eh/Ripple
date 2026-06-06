@@ -6,7 +6,8 @@ Usage: python scripts/download_road_network.py
 import osmnx as ox
 from pathlib import Path
 
-DATA_DIR = Path("data")
+PROJECT_DIR = Path(__file__).parent.parent
+DATA_DIR = PROJECT_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 OUT = DATA_DIR / "london_road_network.graphml"
 

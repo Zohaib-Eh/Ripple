@@ -2,39 +2,41 @@
 Run this once to download all static London datasets.
 Usage: python scripts/download_data.py
 """
-import os
 import requests
 import zipfile
 import io
 from pathlib import Path
 
-DATA_DIR = Path("data")
+PROJECT_DIR = Path(__file__).parent.parent
+DATA_DIR = PROJECT_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
 def download_file(url: str, dest: Path, description: str):
+    if dest.exists():
+        print(f"Skipping {description} (already exists)")
+        return
     print(f"Downloading {description}...")
     r = requests.get(url, timeout=120, stream=True)
     r.raise_for_status()
     dest.write_bytes(r.content)
     print(f"  Saved to {dest} ({dest.stat().st_size // 1024} KB)")
 
-def download_zip(url: str, dest_dir: Path, description: str):
-    print(f"Downloading {description}...")
-    r = requests.get(url, timeout=120, stream=True)
-    r.raise_for_status()
-    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
-        z.extractall(dest_dir)
-    print(f"  Extracted to {dest_dir}/")
-
 # 1. London LSOA boundaries (GeoJSON for spatial join)
-download_file(
-    "https://data.london.gov.uk/download/statistical-gis-boundary-files-london/9ba8c833-6370-4b11-abdc-314aa020d867/statistical-gis-boundaries-london.zip",
-    DATA_DIR / "lsoa_boundaries.zip",
-    "LSOA boundaries (zip)"
-)
-with zipfile.ZipFile(DATA_DIR / "lsoa_boundaries.zip") as z:
-    z.extractall(DATA_DIR / "lsoa_boundaries")
-print("  Extracted LSOA boundaries")
+lsoa_zip = DATA_DIR / "lsoa_boundaries.zip"
+lsoa_dir = DATA_DIR / "lsoa_boundaries"
+if not lsoa_dir.exists():
+    download_file(
+        "https://data.london.gov.uk/download/statistical-gis-boundary-files-london/9ba8c833-6370-4b11-abdc-314aa020d867/statistical-gis-boundaries-london.zip",
+        lsoa_zip,
+        "LSOA boundaries (zip)"
+    )
+    with zipfile.ZipFile(lsoa_zip) as z:
+        z.extractall(lsoa_dir)
+    print("  Extracted LSOA boundaries")
+    lsoa_zip.unlink()
+    print("  Removed zip file")
+else:
+    print("Skipping LSOA boundaries (already exists)")
 
 # 2. LSOA Atlas (demographics CSV)
 download_file(
