@@ -16,11 +16,16 @@ The data to see all of this **already exists**. It just lives in separate system
 
 ## What Ripple Does
 
-Ripple is a **real-time causal cascade engine**. When a road disruption happens in London, Ripple:
+Ripple is a **real-time causal cascade engine** with two modes:
 
-1. Detects it automatically from the TfL live API
-2. Models how the disruption ripples outward through the road and transit network using GPU-accelerated graph algorithms
-3. Validates the modelled impact by looking at live camera footage near the disruption
+**Monitoring mode** — detects live TfL road disruptions automatically and shows their downstream impact as they happen.
+
+**Planning mode** — lets a city planner or council officer click anywhere on the map, enter a description (e.g. "Crossrail maintenance Saturday"), and instantly see the predicted cascade impact *before* the decision is made. No coding, no forms — just click a location.
+
+In both modes, Ripple:
+1. Takes a disruption location (live or planned)
+2. Models how it ripples outward through the road and transit network using GPU-accelerated graph BFS
+3. Validates the modelled impact by looking at live JamCam footage near the location
 4. Surfaces the results on a live map with four human-readable impact numbers
 
 Everything runs locally on the **DGX Spark** — no cloud APIs, no data leaving the network.
@@ -53,34 +58,34 @@ Spatial Join (one-time):
 ### Live Loop (every 30 seconds)
 
 ```
-TfL API: /Road/all/Disruption
-    │
-    ▼
-Find nearest graph node to disruption coordinates
-    │
-    ▼
-cuGraph BFS (GPU)
-  Start from disruption node
-  Spread outward up to 15 hops
-  → Set of affected road/transit nodes
-    │
-    ├──► cuDF joins:
-    │      affected nodes → bus stops → sum daily boardings  → Journeys Affected
-    │      affected stops → LSOAs → sum population           → Population Impacted
-    │      affected LSOAs → IMD scores → weighted average    → Deprivation Score
-    │      all businesses (proxy)                            → Businesses in Zone
-    │
-    └──► JamCam Vision:
-           TfL API: /Road/all/Camera → get cameras near disruption
-           Fetch live JPEG from nearest camera
-           Send to local NIM VLM (phi-3.5-vision)
-           → "flowing" / "slow" / "congested" / "incident"
-           → adjust impact severity (incident = ×1.4)
-    │
-    ▼
-Streamlit + Folium map
-  Colour-coded markers (green=flowing, orange=congested, red=incident)
-  Click marker → see camera thumbnail + 4 impact numbers
+TfL API: /Road/all/Disruption          User clicks map (planning mode)
+    │                                           │
+    └──────────────────┬────────────────────────┘
+                       ▼
+        Find nearest graph node to disruption coordinates
+                       │
+                       ▼
+               cuGraph BFS (GPU)
+             Start from disruption node
+             Spread outward up to 15 hops
+             → Set of affected road/transit nodes
+                       │
+           ┌───────────┴───────────┐
+           ▼                       ▼
+      cuDF joins:            JamCam Vision:
+      affected nodes →       TfL API: /Road/all/Camera
+      bus stops →            Fetch live JPEG from nearest camera
+      sum boardings          Send to local NIM VLM (phi-3.5-vision)
+      → LSOAs →              → "flowing/slow/congested/incident"
+      population, IMD        → adjust severity (incident = ×1.4)
+      → businesses           (live mode only — forecasts skip this)
+           │                       │
+           └───────────┬───────────┘
+                       ▼
+              Streamlit + Folium map
+  Live disruptions: colour-coded markers (green/orange/red)
+  Planned disruptions: purple dashed circle + impact forecast banner
+  Click any marker → camera thumbnail + 4 impact numbers
 ```
 
 ---
@@ -151,16 +156,19 @@ The rubric specifically asks for insights that are non-obvious. "Traffic jams ha
 
 ---
 
-## Demo Scenario: Bank Station Closure
+## Demo: Planning Mode in Action
 
-We have a hardcoded "Bank Station Closure" demo button in the UI. This simulates a Northern Line + Central Line suspension at Bank Station (51.5133°N, 0.0886°W).
+For the presentation, click on **Bank Station** on the map (City of London, at the junction of King William St and Queen Victoria St). Type "Northern Line suspension — engineering works" as the description.
 
-Bank Station handles ~120,000 passengers per day. A closure cascades to:
-- All bus routes whose stops are within walking distance of the station
-- LSOAs in the City of London and surrounding areas
-- Businesses in the financial district
+Ripple will immediately run the full cascade from that point and show:
+- Estimated journeys disrupted per day
+- Population in the affected zone
+- Whether the area is high-deprivation (IMD decile)
+- A live JamCam image from the nearest camera
 
-The demo shows a judge exactly what the system does without needing a live disruption to happen during the presentation.
+Bank Station is a good demo location because it handles ~120,000 passengers per day and sits in the financial district — the cascade numbers are large and immediately legible to a judge.
+
+**This is not a hardcoded scenario** — Ripple is running the real pipeline on a real location you chose. You can then click a different location and show the impact changes instantly. That interactivity is what makes it a genuine planning tool, not a dashboard.
 
 ---
 
@@ -181,7 +189,7 @@ The goal is to give city planners a tool they can actually use tomorrow. Instead
 | NVIDIA Stack | 15 | RAPIDS (cuDF + cuGraph) explicitly listed as qualifying tools |
 | Spark Story | 15 | "BFS on 25k-node graph: NetworkX 9.2s → cuGraph 0.08s; VLM inference local, footage never leaves network" |
 | Insight Quality | 10 | Non-obvious: cascade reach + deprivation weighting + vision-observed vs. reported severity |
-| Usability | 10 | A city planner can see the impact of a closure on a live map before approving it |
+| Usability | 10 | City planner clicks any location on the map → instant impact forecast. No forms, no code. |
 | Creativity | 10 | Vision models reading live camera feeds — explicitly mentioned in rubric as top-creativity example |
 | Performance | 10 | GPU vs CPU benchmark shown live in the UI sidebar |
 
@@ -208,7 +216,7 @@ ripple/
 │   └── app.py                    # Streamlit + Folium map
 ├── main.py                       # Entry point: startup + poll loop
 ├── requirements.txt
-└── .env                          # TFL_API_KEY, NIM_BASE_URL, NIM_MODEL
+└── .env                          # TFL_API_KEY, NIM_BASE_URL, NIM_MODEL, NGC_API_KEY
 ```
 
 ---
@@ -239,4 +247,4 @@ TfL API key: register free at api.tfl.gov.uk (instant approval).
 
 ## One-Line Pitch
 
-**Ripple models the human cost of London infrastructure decisions in real time — before they're made — using GPU-accelerated graph BFS, live camera vision, and open city data, running entirely on the DGX Spark.**
+**Ripple lets any city planner click a location on a map and instantly see the human cost of a planned disruption — journeys lost, population impacted, deprivation weighted — powered by GPU-accelerated graph BFS, live camera vision, and open London data, running entirely on the DGX Spark.**
