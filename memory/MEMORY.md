@@ -1,0 +1,2 @@
+- [Ripple Project](project_ripple.md) — hackathon fallback project, real-time London infrastructure cascade engine on DGX Spark
+- [DGX Spark Access](reference_dgx.md) — SSH connection details for DGX Spark
