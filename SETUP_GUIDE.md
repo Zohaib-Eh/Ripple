@@ -150,12 +150,20 @@ cd ~/ripple
 nano .env
 ```
 
-Type exactly this (replacing with your real keys):
+The `.env` file was already copied across with your code. Open it and fill in the two keys:
+
+```bash
+cd ~/ripple
+nano .env
+```
+
+It should look like this (your TfL key is already there — just replace the NGC line):
 
 ```
 TFL_API_KEY=your_tfl_key_here
 NIM_BASE_URL=http://localhost:8000/v1
 NIM_MODEL=microsoft/phi-3-5-vision-instruct
+NGC_API_KEY=your_ngc_key_here
 ```
 
 Save and exit: press `Ctrl+X`, then `Y`, then `Enter`.
@@ -170,15 +178,18 @@ Open a **second SSH session** (new PowerShell window):
 ssh nvidia@hp-15.local
 ```
 
-In this new session, set your NGC API key and start the NIM container:
+In this new session, load your NGC key from `.env` and start the NIM container:
 
 ```bash
-export NGC_API_KEY=your_ngc_key_here
+cd ~/ripple
+export NGC_API_KEY=$(grep NGC_API_KEY .env | cut -d '=' -f2)
 docker run -it --rm --gpus all \
   -e NGC_API_KEY=$NGC_API_KEY \
   -p 8000:8000 \
   nvcr.io/nim/microsoft/phi-3-5-vision-instruct:latest
 ```
+
+The `export` line reads the NGC key directly from your `.env` file so you don't have to type it again.
 
 The first time this runs it will **download the model** — this can take 5–15 minutes depending on the connection. You'll see a progress bar.
 
@@ -300,7 +311,8 @@ streamlit run main.py --server.port 8501 --server.address 0.0.0.0
 
 # Terminal 2 (separate SSH)
 ssh nvidia@hp-15.local
-export NGC_API_KEY=your_key
+cd ~/ripple
+export NGC_API_KEY=$(grep NGC_API_KEY .env | cut -d '=' -f2)
 docker run -it --rm --gpus all -e NGC_API_KEY=$NGC_API_KEY -p 8000:8000 nvcr.io/nim/microsoft/phi-3-5-vision-instruct:latest
 
 # Browser (Windows)
