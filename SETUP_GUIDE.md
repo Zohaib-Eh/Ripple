@@ -68,10 +68,11 @@ Install all dependencies. RAPIDS (cuDF/cuGraph) needs the NVIDIA PyPI index:
 
 ```bash
 pip install cudf-cu12 cugraph-cu12 --extra-index-url=https://pypi.nvidia.com
-pip install osmnx geopandas shapely httpx streamlit folium streamlit-folium python-dotenv networkx openai pillow pandas pytest respx
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+pip install transformers accelerate osmnx geopandas shapely httpx streamlit folium streamlit-folium python-dotenv networkx pillow pandas pytest respx
 ```
 
-This will take 5–10 minutes. The RAPIDS packages are large.
+This will take 5–10 minutes. The RAPIDS and PyTorch packages are large.
 
 **Verify RAPIDS installed correctly:**
 ```bash
@@ -97,14 +98,24 @@ You'll need this in Step 7.
 
 ---
 
-## Step 5 — Get Your NGC API Key (for the NIM AI model)
+## Step 5 — Pre-download the VLM Model Weights
 
-The NIM container (the vision AI model) needs an NVIDIA NGC account to download.
+The vision model (`nvidia/llama-3.1-nemotron-nano-vl-8b-v1`) is downloaded from HuggingFace the first time the app runs a camera classification. To avoid a cold-start delay during the demo, pre-download it now:
 
-1. Go to **https://ngc.nvidia.com** and sign up (free)
-2. Once logged in, click your profile (top right) → **Setup**
-3. Click **Generate API Key**
-4. Copy the key — it starts with something like `nvapi-...`
+```bash
+python3 -c "
+from transformers import AutoProcessor, AutoModelForImageTextToText
+import torch
+model_id = 'nvidia/llama-3.1-nemotron-nano-vl-8b-v1'
+print('Downloading processor...')
+AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+print('Downloading model weights (this takes a few minutes)...')
+AutoModelForImageTextToText.from_pretrained(model_id, torch_dtype=torch.float16, device_map='cuda', trust_remote_code=True)
+print('Done — model cached.')
+"
+```
+
+This downloads ~16GB of weights into `~/.cache/huggingface/`. It only runs once — subsequent loads use the cache and take ~30 seconds.
 
 ---
 
@@ -157,59 +168,20 @@ cd ~/ripple
 nano .env
 ```
 
-It should look like this (your TfL key is already there — just replace the NGC line):
+It should look like this (your TfL key is already there):
 
 ```
 TFL_API_KEY=your_tfl_key_here
-NIM_BASE_URL=http://localhost:8000/v1
-NIM_MODEL=microsoft/phi-3-5-vision-instruct
 NGC_API_KEY=your_ngc_key_here
 ```
+
+The `NIM_BASE_URL` and `NIM_MODEL` lines are no longer needed — the model loads directly via HuggingFace.
 
 Save and exit: press `Ctrl+X`, then `Y`, then `Enter`.
 
 ---
 
-## Step 8 — Start the NIM AI Model Container
-
-Open a **second SSH session** (new PowerShell window):
-
-```powershell
-ssh nvidia@hp-15.local
-```
-
-In this new session, load your NGC key from `.env` and start the NIM container:
-
-```bash
-cd ~/ripple
-export NGC_API_KEY=$(grep NGC_API_KEY .env | cut -d '=' -f2)
-docker run -it --rm --gpus all \
-  -e NGC_API_KEY=$NGC_API_KEY \
-  -p 8000:8000 \
-  nvcr.io/nim/nvidia/llama-3.1-nemotron-nano-vl-8b-v1:1
-```
-
-The `export` line reads the NGC key directly from your `.env` file so you don't have to type it again.
-
-The first time this runs it will **download the model** — this can take 5–15 minutes depending on the connection. You'll see a progress bar.
-
-When it's ready you'll see something like:
-```
-INFO:     Uvicorn running on http://0.0.0.0:8000
-```
-
-**Verify the model is running** — open a third SSH session and run:
-```bash
-curl http://localhost:8000/v1/models
-```
-
-You should get a JSON response. If you do, the AI model is ready.
-
-**Keep this terminal open** — the model needs to keep running.
-
----
-
-## Step 9 — Run the Ripple App
+## Step 8 — Run the Ripple App
 
 Go back to your **first SSH session** (the one with port forwarding: `ssh -L 8501:...`):
 
@@ -226,7 +198,7 @@ You'll see:
 
 ---
 
-## Step 10 — Open in Your Browser
+## Step 9 — Open in Your Browser
 
 On your **Windows laptop**, open your browser and go to:
 
@@ -270,12 +242,12 @@ Then open `http://localhost:8502` in your browser (also update the SSH tunnel: `
 ### "TfL API returns 0 disruptions"
 This is normal — there may genuinely be no active road disruptions right now. Use the Demo button in the sidebar to see the system working.
 
-### NIM container says "permission denied" or "authentication failed"
-Make sure your NGC_API_KEY is set correctly:
+### VLM fails with "CUDA out of memory"
+The model loads in float16 and needs ~8GB of GPU VRAM. The DGX Spark has 128GB unified memory so this should not happen. If it does, try:
 ```bash
-echo $NGC_API_KEY
+python3 -c "import torch; torch.cuda.empty_cache()"
 ```
-If it's empty, re-run `export NGC_API_KEY=your_key_here`.
+Then restart the app.
 
 ### The app is loading for too long (>5 minutes)
 The spatial join (bus stops → LSOA codes) runs once and caches to `data/stops_with_lsoa.parquet`. If it's stuck, wait it out — it only ever runs once.
@@ -294,8 +266,9 @@ Not just `ssh nvidia@hp-15.local`.
 | Terminal | Command | Purpose |
 |---|---|---|
 | Terminal 1 | `ssh -L 8501:localhost:8501 nvidia@hp-15.local` | Port-forwarded main session — run the app here |
-| Terminal 2 | `ssh nvidia@hp-15.local` + docker run | Keeps the NIM AI model running |
 | Browser | `http://localhost:8501` | View the Ripple UI |
+
+The VLM model runs in-process inside the Streamlit app — no separate terminal needed.
 
 ---
 
@@ -308,12 +281,6 @@ cd ~/ripple
 python3 scripts/download_data.py        # first time only
 python3 scripts/download_road_network.py # first time only
 streamlit run main.py --server.port 8501 --server.address 0.0.0.0
-
-# Terminal 2 (separate SSH)
-ssh nvidia@hp-15.local
-cd ~/ripple
-export NGC_API_KEY=$(grep NGC_API_KEY .env | cut -d '=' -f2)
-docker run -it --rm --gpus all -e NGC_API_KEY=$NGC_API_KEY -p 8000:8000 nvcr.io/nim/nvidia/llama-3.1-nemotron-nano-vl-8b-v1:1
 
 # Browser (Windows)
 http://localhost:8501
