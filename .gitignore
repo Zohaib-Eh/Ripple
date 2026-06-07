@@ -1,4 +1,5 @@
 data/
+!data/london_road_network.graphml
 .env
 __pycache__/
 *.pyc
